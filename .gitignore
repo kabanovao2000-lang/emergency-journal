@@ -1,13 +1,29 @@
-emergency-journal/
-├── docs/
-│   └── technical_specification.md      # ТЗ по варианту 8
-├── monitoring/
-│   ├── vagrant/
-│   ├── ansible/
-│   ├── zabbix_dashboard.json
-│   └── README_monitoring.md
-├── app/
-│   ├── backend/
-│   ├── frontend/
-│   └── database/
-└── README.md
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+env/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (frontend)
+node_modules/
+dist/
+build/
