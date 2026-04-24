@@ -1,11 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <title>Электронный журнал учета аварийных ситуаций | АСУ ТП</title>
-    <!-- Используем шрифты и простые стили, без внешних зависимостей, но с современным подходом -->
     <style>
         * {
             margin: 0;
@@ -317,6 +315,27 @@
             color: #6c8d9e;
         }
 
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .loading-spinner {
+            background: white;
+            padding: 20px 40px;
+            border-radius: 28px;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
         @media (max-width: 750px) {
             body {
                 padding: 16px;
@@ -427,89 +446,206 @@
                 </tr>
             </thead>
             <tbody id="tableBody">
-                <!-- динамические строки -->
-                <tr class="empty-row"><td colspan="9">Нет записей. Добавьте первую аварийную ситуацию 👆</td></tr>
+                <tr class="empty-row"><td colspan="9">Загрузка данных с сервера...</td></tr>
             </tbody>
         </table>
     </div>
     <div class="footer-note">
-        📋 Электронный журнал учета аварийных ситуаций — фиксация инцидентов, изменение статусов, закрытие и редактирование.
+        📋 Электронный журнал учета аварийных ситуаций — работа с сервером (API)
     </div>
 </div>
 
+<!-- Loading overlay -->
+<div id="loadingOverlay" class="loading-overlay">
+    <div class="loading-spinner">⏳ Загрузка...</div>
+</div>
+
 <script>
-    // ---------- МОДЕЛЬ ДАННЫХ ----------
+    // ========== КОНФИГУРАЦИЯ ==========
+    // Укажите URL вашего сервера
+    const API_BASE_URL = '/api';  // Если сервер на том же хосте
+    // const API_BASE_URL = 'http://localhost:5000/api';  // Для локальной разработки
+    
+    // ========== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ==========
     let incidents = [];
-    let nextId = 1;
+    let currentSearch = "";
+    let currentStatusFilter = "all";
     
-    // Загружаем сохранённые данные из localStorage при инициализации
-    function loadFromStorage() {
-        const stored = localStorage.getItem('emergency_journal');
-        if(stored) {
-            try {
-                incidents = JSON.parse(stored);
-                if(incidents.length > 0) {
-                    // вычисляем следующий ID
-                    const maxId = Math.max(...incidents.map(inc => inc.id), 0);
-                    nextId = maxId + 1;
-                } else {
-                    nextId = 1;
-                }
-            } catch(e) { incidents = []; nextId = 1; }
+    // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+    function showLoading() {
+        document.getElementById('loadingOverlay').style.display = 'flex';
+    }
+    
+    function hideLoading() {
+        document.getElementById('loadingOverlay').style.display = 'none';
+    }
+    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    function showMessage(message, isError = false) {
+        // Простое уведомление через alert (можно заменить на красивое модальное окно)
+        if (isError) {
+            alert('❌ Ошибка: ' + message);
         } else {
-            // Демо-примеры для наглядности
-            incidents = [
-                {
-                    id: 1,
-                    dateTime: "2025-04-22T08:30",
-                    equipment: "Роторная дробилка",
-                    type: "Механическая",
-                    severity: "Высокая",
-                    description: "Перегрев подшипников, остановка линии",
-                    responsible: "Иванов А.А.",
-                    status: "новая"
-                },
-                {
-                    id: 2,
-                    dateTime: "2025-04-21T14:15",
-                    equipment: "Сервер баз данных",
-                    type: "Программный сбой",
-                    severity: "Критическая",
-                    description: "Отказ кластера БД, потеря данных за 2 часа",
-                    responsible: "Петрова Е.В.",
-                    status: "в работе"
-                },
-                {
-                    id: 3,
-                    dateTime: "2025-04-20T23:50",
-                    equipment: "Насосная станция",
-                    type: "Утечка",
-                    severity: "Средняя",
-                    description: "Небольшая утечка масла, устранена частично",
-                    responsible: "Сидоров М.И.",
-                    status: "закрыта"
-                }
-            ];
-            nextId = 4;
+            alert('✅ ' + message);
         }
-        updateStatsAndRender();
     }
     
-    // сохраняем в localStorage
-    function persistData() {
-        localStorage.setItem('emergency_journal', JSON.stringify(incidents));
+    // ========== API-ЗАПРОСЫ К СЕРВЕРУ ==========
+    
+    // 1. Загрузка всех инцидентов с сервера (GET /api/incidents)
+    async function loadIncidentsFromServer() {
+        showLoading();
+        try {
+            let url = `${API_BASE_URL}/incidents?`;
+            if (currentStatusFilter !== 'all') {
+                url += `status=${encodeURIComponent(currentStatusFilter)}&`;
+            }
+            if (currentSearch.trim()) {
+                url += `search=${encodeURIComponent(currentSearch.trim())}&`;
+            }
+            url += `_=${Date.now()}`; // предотвращаем кэширование
+            
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            const data = await response.json();
+            incidents = data.items || [];
+            updateStatsAndRender();
+        } catch (error) {
+            console.error('Ошибка загрузки:', error);
+            showMessage('Не удалось загрузить данные с сервера: ' + error.message, true);
+            incidents = [];
+            updateStatsAndRender();
+        } finally {
+            hideLoading();
+        }
     }
     
-    // Вспомогательная: обновление статистики (всего и активных: новая + в работе)
+    // 2. Создание нового инцидента (POST /api/incidents)
+    async function createIncidentOnServer(incidentData) {
+        showLoading();
+        try {
+            const response = await fetch(`${API_BASE_URL}/incidents`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(incidentData)
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.error || `HTTP ${response.status}`);
+            }
+            
+            const newIncident = await response.json();
+            showMessage('Инцидент успешно добавлен!');
+            return newIncident;
+        } catch (error) {
+            console.error('Ошибка создания:', error);
+            showMessage('Не удалось добавить инцидент: ' + error.message, true);
+            return null;
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    // 3. Обновление статуса инцидента (PATCH /api/incidents/{id})
+    async function updateIncidentStatusOnServer(id, newStatus) {
+        showLoading();
+        try {
+            const response = await fetch(`${API_BASE_URL}/incidents/${id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ status: newStatus })
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const updated = await response.json();
+            showMessage(`Инцидент #${id} изменён: ${newStatus === 'закрыта' ? 'закрыт' : 'обновлён'}`);
+            return updated;
+        } catch (error) {
+            console.error('Ошибка обновления:', error);
+            showMessage('Не удалось обновить статус: ' + error.message, true);
+            return null;
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    // 4. Полное обновление инцидента (PUT /api/incidents/{id})
+    async function updateIncidentFullOnServer(id, incidentData) {
+        showLoading();
+        try {
+            const response = await fetch(`${API_BASE_URL}/incidents/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(incidentData)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            const updated = await response.json();
+            showMessage(`Инцидент #${id} успешно обновлён!`);
+            return updated;
+        } catch (error) {
+            console.error('Ошибка обновления:', error);
+            showMessage('Не удалось обновить инцидент: ' + error.message, true);
+            return null;
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    // 5. Удаление инцидента (DELETE /api/incidents/{id})
+    async function deleteIncidentOnServer(id) {
+        showLoading();
+        try {
+            const response = await fetch(`${API_BASE_URL}/incidents/${id}`, {
+                method: 'DELETE'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            
+            showMessage(`Инцидент #${id} удалён`);
+            return true;
+        } catch (error) {
+            console.error('Ошибка удаления:', error);
+            showMessage('Не удалось удалить инцидент: ' + error.message, true);
+            return false;
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    // ========== UI ЛОГИКА (ОТОБРАЖЕНИЕ ТАБЛИЦЫ) ==========
+    
     function updateStats() {
         const total = incidents.length;
         const active = incidents.filter(inc => inc.status === 'новая' || inc.status === 'в работе').length;
         document.getElementById('statsPreview').innerHTML = `Всего: ${total} | Активных: ${active} ⚠️`;
     }
-    
-    // рендер таблицы с учетом фильтров и поиска
-    let currentSearch = "";
-    let currentStatusFilter = "all";
     
     function renderTable() {
         const tbody = document.getElementById('tableBody');
@@ -517,61 +653,57 @@
         
         let filtered = [...incidents];
         
-        // фильтрация по статусу
-        if(currentStatusFilter !== 'all') {
+        // фильтрация по статусу (дополнительная, хотя сервер уже фильтрует)
+        if (currentStatusFilter !== 'all') {
             filtered = filtered.filter(inc => inc.status === currentStatusFilter);
         }
         
-        // поиск по тексту
-        if(currentSearch.trim() !== "") {
+        // поиск по тексту (дополнительный, на клиенте)
+        if (currentSearch.trim() !== "") {
             const searchLower = currentSearch.trim().toLowerCase();
             filtered = filtered.filter(inc => 
-                inc.description.toLowerCase().includes(searchLower) ||
-                inc.equipment.toLowerCase().includes(searchLower) ||
-                inc.responsible.toLowerCase().includes(searchLower) ||
-                inc.type.toLowerCase().includes(searchLower)
+                (inc.description || '').toLowerCase().includes(searchLower) ||
+                (inc.equipment || '').toLowerCase().includes(searchLower) ||
+                (inc.responsible || '').toLowerCase().includes(searchLower) ||
+                (inc.type || '').toLowerCase().includes(searchLower)
             );
         }
         
-        if(filtered.length === 0) {
+        if (filtered.length === 0) {
             const emptyRow = document.createElement('tr');
             emptyRow.className = 'empty-row';
-            emptyRow.innerHTML = '<td colspan="9">📭 Ничего не найдено. Измените параметры фильтра или добавьте запись.</td>';
+            emptyRow.innerHTML = '<td colspan="9">📭 Ничего не найдено. Добавьте запись.</td>';
             tbody.appendChild(emptyRow);
             updateStats();
             return;
         }
         
-        for(let inc of filtered) {
+        for (let inc of filtered) {
             const row = document.createElement('tr');
-            // форматирование даты
             let formattedDate = inc.dateTime ? inc.dateTime.replace('T', ' ') : 'Дата не указана';
-            if(inc.dateTime && inc.dateTime.includes('T')) {
+            if (inc.dateTime && inc.dateTime.includes('T')) {
                 formattedDate = inc.dateTime.split('T').join(' ');
             }
             
-            // статус бейдж
-            let statusText = "";
-            let statusClass = "";
-            if(inc.status === 'новая') { statusText = "🚨 Новая"; statusClass="new"; }
-            else if(inc.status === 'в работе') { statusText = "🛠 В работе"; statusClass="in-progress"; }
-            else { statusText = "✅ Закрыта"; statusClass="closed"; }
+            let statusText = "", statusClass = "";
+            if (inc.status === 'новая') { statusText = "🚨 Новая"; statusClass = "new"; }
+            else if (inc.status === 'в работе') { statusText = "🛠 В работе"; statusClass = "in-progress"; }
+            else { statusText = "✅ Закрыта"; statusClass = "closed"; }
             
-            // критичность с эмодзи
             let severityDisplay = inc.severity;
-            if(inc.severity === 'Низкая') severityDisplay = '🟢 Низкая';
-            else if(inc.severity === 'Средняя') severityDisplay = '🟡 Средняя';
-            else if(inc.severity === 'Высокая') severityDisplay = '🔴 Высокая';
-            else if(inc.severity === 'Критическая') severityDisplay = '⚫ Критическая';
+            if (inc.severity === 'Низкая') severityDisplay = '🟢 Низкая';
+            else if (inc.severity === 'Средняя') severityDisplay = '🟡 Средняя';
+            else if (inc.severity === 'Высокая') severityDisplay = '🔴 Высокая';
+            else if (inc.severity === 'Критическая') severityDisplay = '⚫ Критическая';
             
             row.innerHTML = `
                 <td>${inc.id}</td>
-                <td>${formattedDate}</td>
+                <td>${escapeHtml(formattedDate)}</td>
                 <td><strong>${escapeHtml(inc.equipment)}</strong></td>
                 <td>${escapeHtml(inc.type)}</td>
                 <td>${severityDisplay}</td>
                 <td style="max-width:250px; word-break:break-word;">${escapeHtml(inc.description)}</td>
-                <td>${escapeHtml(inc.responsible)}</td>
+                <td>${escapeHtml(inc.responsible || 'Не назначен')}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td class="action-buttons">
                     <button class="icon-btn edit-btn" data-id="${inc.id}" title="Редактировать">✏️</button>
@@ -582,88 +714,83 @@
             tbody.appendChild(row);
         }
         
-        // обработчики для кнопок в каждой строке (делегирование через общий обработчик)
         attachRowEvents();
         updateStats();
     }
     
-    // безопасное экранирование
-    function escapeHtml(str) {
-        if(!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
-            if(m === '&') return '&amp;';
-            if(m === '<') return '&lt;';
-            if(m === '>') return '&gt;';
-            return m;
-        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
-            return c;
-        });
-    }
+    // ========== ОБРАБОТЧИКИ ДЕЙСТВИЙ (С ВЫЗОВОМ API) ==========
     
     function attachRowEvents() {
-        // редактирование
+        // Редактирование
         document.querySelectorAll('.edit-btn').forEach(btn => {
             btn.removeEventListener('click', handleEdit);
             btn.addEventListener('click', handleEdit);
         });
-        // закрытие (resolve)
+        // Закрытие (изменение статуса)
         document.querySelectorAll('.resolve-btn').forEach(btn => {
             btn.removeEventListener('click', handleResolve);
             btn.addEventListener('click', handleResolve);
         });
-        // удаление
+        // Удаление
         document.querySelectorAll('.delete-btn').forEach(btn => {
             btn.removeEventListener('click', handleDelete);
             btn.addEventListener('click', handleDelete);
         });
     }
     
-    function handleEdit(e) {
+    async function handleEdit(e) {
         const btn = e.currentTarget;
         const id = parseInt(btn.getAttribute('data-id'));
         const incident = incidents.find(inc => inc.id === id);
-        if(!incident) return;
+        if (!incident) return;
         
-        // Модальное окно через prompt упрощённо, но сделаем редактирование основных полей
+        // Собираем новые данные через prompt (можно заменить на модальное окно)
         const newDesc = prompt("Редактировать описание аварии:", incident.description);
-        if(newDesc !== null && newDesc.trim() !== "") incident.description = newDesc.trim();
-        const newResp = prompt("Ответственный:", incident.responsible);
-        if(newResp !== null) incident.responsible = newResp.trim() || incident.responsible;
-        const newEquipment = prompt("Оборудование:", incident.equipment);
-        if(newEquipment !== null && newEquipment.trim() !== "") incident.equipment = newEquipment.trim();
-        const newType = prompt("Тип аварии (Механическая, Электрическая и т.д.):", incident.type);
-        if(newType !== null && newType.trim() !== "") incident.type = newType.trim();
+        if (newDesc !== null && newDesc.trim() !== "") incident.description = newDesc.trim();
         
-        // можно также сменить критичность выпадающим списком? сделаем просто выбор
+        const newResp = prompt("Ответственный:", incident.responsible);
+        if (newResp !== null) incident.responsible = newResp.trim() || "Не назначен";
+        
+        const newEquipment = prompt("Оборудование:", incident.equipment);
+        if (newEquipment !== null && newEquipment.trim() !== "") incident.equipment = newEquipment.trim();
+        
+        const newType = prompt("Тип аварии (Механическая, Электрическая и т.д.):", incident.type);
+        if (newType !== null && newType.trim() !== "") incident.type = newType.trim();
+        
         let newSeverity = prompt("Критичность: Низкая, Средняя, Высокая, Критическая", incident.severity);
-        if(newSeverity !== null) {
+        if (newSeverity !== null) {
             const valid = ['Низкая','Средняя','Высокая','Критическая'];
-            if(valid.includes(newSeverity)) incident.severity = newSeverity;
+            if (valid.includes(newSeverity)) incident.severity = newSeverity;
             else alert("Оставлено прежнее значение, доступны: Низкая,Средняя,Высокая,Критическая");
         }
         
-        persistData();
-        updateStatsAndRender();
-    }
-    
-    function handleResolve(e) {
-        const btn = e.currentTarget;
-        const id = parseInt(btn.getAttribute('data-id'));
-        const incident = incidents.find(inc => inc.id === id);
-        if(incident && incident.status !== 'закрыта') {
-            incident.status = 'закрыта';
-            persistData();
-            updateStatsAndRender();
+        // Отправляем обновление на сервер
+        const updated = await updateIncidentFullOnServer(id, incident);
+        if (updated) {
+            await loadIncidentsFromServer(); // перезагружаем данные
         }
     }
     
-    function handleDelete(e) {
+    async function handleResolve(e) {
         const btn = e.currentTarget;
         const id = parseInt(btn.getAttribute('data-id'));
-        if(confirm("Удалить запись об аварии? Данные будут безвозвратно потеряны.")) {
-            incidents = incidents.filter(inc => inc.id !== id);
-            persistData();
-            updateStatsAndRender();
+        const incident = incidents.find(inc => inc.id === id);
+        if (incident && incident.status !== 'закрыта') {
+            const updated = await updateIncidentStatusOnServer(id, 'закрыта');
+            if (updated) {
+                await loadIncidentsFromServer();
+            }
+        }
+    }
+    
+    async function handleDelete(e) {
+        const btn = e.currentTarget;
+        const id = parseInt(btn.getAttribute('data-id'));
+        if (confirm("Удалить запись об аварии? Данные будут безвозвратно потеряны.")) {
+            const success = await deleteIncidentOnServer(id);
+            if (success) {
+                await loadIncidentsFromServer();
+            }
         }
     }
     
@@ -672,12 +799,11 @@
         updateStats();
     }
     
-    // Добавление новой аварии
-    function addIncident() {
-        // получение значений
+    // ========== ДОБАВЛЕНИЕ НОВОГО ИНЦИДЕНТА ==========
+    async function addIncident() {
+        // Получение значений из формы
         let dateTime = document.getElementById('incidentDateTime').value;
-        if(!dateTime) {
-            // подставляем текущее локальное дата-время
+        if (!dateTime) {
             const now = new Date();
             const year = now.getFullYear();
             const month = String(now.getMonth()+1).padStart(2,'0');
@@ -686,6 +812,7 @@
             const minutes = String(now.getMinutes()).padStart(2,'0');
             dateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
         }
+        
         const equipment = document.getElementById('equipment').value.trim();
         const incidentType = document.getElementById('incidentType').value;
         const severity = document.getElementById('severity').value;
@@ -693,45 +820,40 @@
         let responsible = document.getElementById('responsible').value.trim();
         const initStatus = document.getElementById('initialStatus').value;
         
-        if(!equipment) {
+        if (!equipment) {
             alert("Пожалуйста, укажите оборудование / систему");
             return;
         }
-        if(!description) {
+        if (!description) {
             alert("Введите описание аварийной ситуации");
             return;
         }
-        if(!responsible) responsible = "Не назначен";
+        if (!responsible) responsible = "Не назначен";
         
         const newIncident = {
-            id: nextId++,
             dateTime: dateTime,
             equipment: equipment,
             type: incidentType,
             severity: severity,
             description: description,
             responsible: responsible,
-            status: initStatus   // 'новая' или 'в работе'
+            status: initStatus
         };
         
-        incidents.unshift(newIncident); // свежие сверху
-        persistData();
-        
-        // очистка формы (опционально)
-        document.getElementById('equipment').value = '';
-        document.getElementById('description').value = '';
-        document.getElementById('responsible').value = '';
-        document.getElementById('incidentDateTime').value = '';
-        // но оставим datetime пустым для автоследующего? проще оставить пустым
-        updateStatsAndRender();
-        
-        // дополнительно сбросим фильтры для отображения новой записи (не обязательно)
-        if(currentStatusFilter !== 'all' || currentSearch !== '') {
-            // но не сбрасываем принудительно, пользователь видит по своему фильтру
+        const created = await createIncidentOnServer(newIncident);
+        if (created) {
+            // Очистка формы
+            document.getElementById('equipment').value = '';
+            document.getElementById('description').value = '';
+            document.getElementById('responsible').value = '';
+            document.getElementById('incidentDateTime').value = '';
+            
+            // Перезагружаем данные с сервера
+            await loadIncidentsFromServer();
         }
     }
     
-    // фильтры и поиск
+    // ========== ФИЛЬТРАЦИЯ ==========
     function bindFilters() {
         const searchInput = document.getElementById('searchInput');
         const statusSelect = document.getElementById('statusFilter');
@@ -739,29 +861,32 @@
         
         searchInput.addEventListener('input', (e) => {
             currentSearch = e.target.value;
-            renderTable();
+            renderTable(); // фильтрация на клиенте (быстрее)
+            // Альтернатива: loadIncidentsFromServer() для фильтрации на сервере
         });
-        statusSelect.addEventListener('change', (e) => {
+        
+        statusSelect.addEventListener('change', async (e) => {
             currentStatusFilter = e.target.value;
-            renderTable();
+            await loadIncidentsFromServer(); // фильтрация на сервере
         });
-        resetBtn.addEventListener('click', () => {
+        
+        resetBtn.addEventListener('click', async () => {
             currentSearch = "";
             currentStatusFilter = "all";
             document.getElementById('searchInput').value = "";
             document.getElementById('statusFilter').value = "all";
-            renderTable();
+            await loadIncidentsFromServer();
         });
     }
     
-    // Инициализация страницы
-    function init() {
-        loadFromStorage();
+    // ========== ИНИЦИАЛИЗАЦИЯ ==========
+    async function init() {
         bindFilters();
         document.getElementById('addIncidentBtn').addEventListener('click', addIncident);
-        // Автоматически подставить текущую дату-время в поле при загрузке (опционально)
+        
+        // Установка текущей даты/времени в поле
         const nowField = document.getElementById('incidentDateTime');
-        if(!nowField.value) {
+        if (!nowField.value) {
             const now = new Date();
             const year = now.getFullYear();
             const month = String(now.getMonth()+1).padStart(2,'0');
@@ -770,9 +895,12 @@
             const minutes = String(now.getMinutes()).padStart(2,'0');
             nowField.value = `${year}-${month}-${day}T${hours}:${minutes}`;
         }
-        updateStatsAndRender();
+        
+        // Загружаем данные с сервера
+        await loadIncidentsFromServer();
     }
     
+    // Запуск приложения
     init();
 </script>
 </body>
