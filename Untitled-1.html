@@ -1,0 +1,779 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Электронный журнал учета аварийных ситуаций | АСУ ТП</title>
+    <!-- Используем шрифты и простые стили, без внешних зависимостей, но с современным подходом -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #f0f4f8;
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            padding: 24px 20px;
+            color: #1a2a3a;
+        }
+
+        .container {
+            max-width: 1440px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #0b2b3b, #1a4a6f);
+            color: white;
+            border-radius: 28px;
+            padding: 20px 30px;
+            margin-bottom: 28px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .title-section h1 {
+            font-size: 1.9rem;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .title-section h1::before {
+            content: "⚠️";
+            font-size: 2rem;
+        }
+
+        .title-section p {
+            font-size: 0.9rem;
+            opacity: 0.85;
+            margin-top: 6px;
+        }
+
+        .stats-badge {
+            background: rgba(255,255,255,0.2);
+            backdrop-filter: blur(4px);
+            padding: 10px 20px;
+            border-radius: 60px;
+            font-weight: 500;
+            font-size: 1rem;
+        }
+
+        /* Карточка формы добавления */
+        .add-card {
+            background: white;
+            border-radius: 28px;
+            padding: 24px 28px;
+            margin-bottom: 32px;
+            box-shadow: 0 8px 18px rgba(0,0,0,0.05);
+            transition: all 0.2s;
+            border: 1px solid #e2edf2;
+        }
+
+        .add-card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 18px;
+            color: #0f3b4f;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 18px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            flex: 1 1 220px;
+            min-width: 180px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #4b6a7c;
+            margin-bottom: 6px;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 18px;
+            border: 1.5px solid #cbdde6;
+            background: #fff;
+            font-size: 0.95rem;
+            transition: 0.2s;
+            font-family: inherit;
+        }
+
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #1a6f8f;
+            box-shadow: 0 0 0 3px rgba(26,111,143,0.2);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 70px;
+        }
+
+        .btn {
+            border: none;
+            background: #1a6f8f;
+            color: white;
+            padding: 12px 24px;
+            font-weight: 600;
+            border-radius: 40px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn:hover {
+            background: #0d5570;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+        }
+
+        .btn-danger {
+            background: #bc4e2c;
+        }
+
+        .btn-danger:hover {
+            background: #9a3a1c;
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1.5px solid #1a6f8f;
+            color: #1a6f8f;
+        }
+
+        .btn-outline:hover {
+            background: #e6f4f9;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* filters */
+        .filter-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            gap: 15px;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: center;
+            background: white;
+            padding: 8px 18px;
+            border-radius: 60px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+            border: 1px solid #d4e2ea;
+        }
+
+        .search-box input {
+            border: none;
+            padding: 10px 0;
+            font-size: 0.9rem;
+            width: 220px;
+            background: transparent;
+        }
+
+        .search-box input:focus {
+            outline: none;
+        }
+
+        .status-filter select {
+            padding: 9px 16px;
+            border-radius: 30px;
+            border: 1px solid #cbdde6;
+            background: white;
+            font-weight: 500;
+        }
+
+        .table-wrapper {
+            background: white;
+            border-radius: 28px;
+            overflow-x: auto;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.05);
+            border: 1px solid #eef3f8;
+        }
+
+        .journal-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            min-width: 700px;
+        }
+
+        .journal-table th {
+            text-align: left;
+            padding: 18px 16px;
+            background: #f9fdfe;
+            color: #1f5068;
+            font-weight: 700;
+            border-bottom: 2px solid #dae9f0;
+        }
+
+        .journal-table td {
+            padding: 14px 16px;
+            border-bottom: 1px solid #e9f0f4;
+            vertical-align: middle;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-align: center;
+            background: #eef2f5;
+            color: #2c5a74;
+        }
+
+        .status-badge.closed {
+            background: #dff0e4;
+            color: #1c6e3c;
+        }
+
+        .status-badge.in-progress {
+            background: #fff0db;
+            color: #b75f00;
+        }
+
+        .status-badge.new {
+            background: #ffe0e0;
+            color: #bc3f2e;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1.25rem;
+            padding: 4px 8px;
+            border-radius: 30px;
+            transition: 0.1s;
+        }
+
+        .icon-btn.edit-btn {
+            color: #2c7da0;
+        }
+        .icon-btn.delete-btn {
+            color: #bc4e2c;
+        }
+        .icon-btn.resolve-btn {
+            color: #2b7e45;
+        }
+
+        .icon-btn:hover {
+            background: #f0f5f9;
+            transform: scale(1.05);
+        }
+
+        .empty-row td {
+            text-align: center;
+            padding: 48px;
+            color: #8ba3b3;
+            font-style: italic;
+        }
+
+        .footer-note {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 0.8rem;
+            color: #6c8d9e;
+        }
+
+        @media (max-width: 750px) {
+            body {
+                padding: 16px;
+            }
+            .header {
+                flex-direction: column;
+                align-items: start;
+                gap: 12px;
+            }
+            .form-row {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div class="title-section">
+            <h1>Журнал учёта аварийных ситуаций</h1>
+            <p>Регистрация, мониторинг и устранение инцидентов | АСУ ТП</p>
+        </div>
+        <div class="stats-badge" id="statsPreview">
+            Всего: 0 | Активных: 0
+        </div>
+    </div>
+
+    <!-- Форма добавления новой аварийной ситуации -->
+    <div class="add-card">
+        <h2>➕ Зарегистрировать инцидент</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Дата и время</label>
+                <input type="datetime-local" id="incidentDateTime" value="">
+            </div>
+            <div class="form-group">
+                <label>Оборудование / Система</label>
+                <input type="text" id="equipment" placeholder="Насосная станция, Сервер, Конвейер..." autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label>Тип аварии</label>
+                <select id="incidentType">
+                    <option value="Механическая">Механическая поломка</option>
+                    <option value="Электрическая">Электрическая неисправность</option>
+                    <option value="Программный сбой">Программный сбой</option>
+                    <option value="Утечка">Утечка / Пожар</option>
+                    <option value="Человеческий фактор">Человеческий фактор</option>
+                    <option value="Другое">Другое</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Критичность</label>
+                <select id="severity">
+                    <option value="Низкая">🟢 Низкая</option>
+                    <option value="Средняя">🟡 Средняя</option>
+                    <option value="Высокая">🔴 Высокая</option>
+                    <option value="Критическая">⚫ Критическая</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group" style="flex:2">
+                <label>Описание аварии</label>
+                <textarea id="description" placeholder="Подробное описание инцидента, последствия..."></textarea>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Ответственный</label>
+                <input type="text" id="responsible" placeholder="ФИО или должность" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label>Статус (при создании)</label>
+                <select id="initialStatus">
+                    <option value="новая">🚨 Новая (требует реакции)</option>
+                    <option value="в работе">🛠 В работе</option>
+                </select>
+            </div>
+            <div class="form-group" style="justify-content: flex-end; display: flex; align-items: flex-end;">
+                <button class="btn" id="addIncidentBtn">➕ Добавить запись</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Панель фильтрации и поиска -->
+    <div class="filter-bar">
+        <div class="search-box">
+            <span>🔍</span>
+            <input type="text" id="searchInput" placeholder="Поиск по описанию, оборудованию, ответств.">
+        </div>
+        <div class="status-filter">
+            <select id="statusFilter">
+                <option value="all">Все статусы</option>
+                <option value="новая">Новая</option>
+                <option value="в работе">В работе</option>
+                <option value="закрыта">Закрыта</option>
+            </select>
+        </div>
+        <button id="resetFiltersBtn" class="btn-outline btn" style="padding: 8px 20px;">Сбросить фильтры</button>
+    </div>
+
+    <!-- Таблица журнала аварий -->
+    <div class="table-wrapper">
+        <table class="journal-table" id="incidentTable">
+            <thead>
+                <tr>
+                    <th>ID</th><th>Дата/Время</th><th>Оборудование</th><th>Тип аварии</th><th>Критичность</th><th>Описание</th><th>Ответственный</th><th>Статус</th><th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+                <!-- динамические строки -->
+                <tr class="empty-row"><td colspan="9">Нет записей. Добавьте первую аварийную ситуацию 👆</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="footer-note">
+        📋 Электронный журнал учета аварийных ситуаций — фиксация инцидентов, изменение статусов, закрытие и редактирование.
+    </div>
+</div>
+
+<script>
+    // ---------- МОДЕЛЬ ДАННЫХ ----------
+    let incidents = [];
+    let nextId = 1;
+    
+    // Загружаем сохранённые данные из localStorage при инициализации
+    function loadFromStorage() {
+        const stored = localStorage.getItem('emergency_journal');
+        if(stored) {
+            try {
+                incidents = JSON.parse(stored);
+                if(incidents.length > 0) {
+                    // вычисляем следующий ID
+                    const maxId = Math.max(...incidents.map(inc => inc.id), 0);
+                    nextId = maxId + 1;
+                } else {
+                    nextId = 1;
+                }
+            } catch(e) { incidents = []; nextId = 1; }
+        } else {
+            // Демо-примеры для наглядности
+            incidents = [
+                {
+                    id: 1,
+                    dateTime: "2025-04-22T08:30",
+                    equipment: "Роторная дробилка",
+                    type: "Механическая",
+                    severity: "Высокая",
+                    description: "Перегрев подшипников, остановка линии",
+                    responsible: "Иванов А.А.",
+                    status: "новая"
+                },
+                {
+                    id: 2,
+                    dateTime: "2025-04-21T14:15",
+                    equipment: "Сервер баз данных",
+                    type: "Программный сбой",
+                    severity: "Критическая",
+                    description: "Отказ кластера БД, потеря данных за 2 часа",
+                    responsible: "Петрова Е.В.",
+                    status: "в работе"
+                },
+                {
+                    id: 3,
+                    dateTime: "2025-04-20T23:50",
+                    equipment: "Насосная станция",
+                    type: "Утечка",
+                    severity: "Средняя",
+                    description: "Небольшая утечка масла, устранена частично",
+                    responsible: "Сидоров М.И.",
+                    status: "закрыта"
+                }
+            ];
+            nextId = 4;
+        }
+        updateStatsAndRender();
+    }
+    
+    // сохраняем в localStorage
+    function persistData() {
+        localStorage.setItem('emergency_journal', JSON.stringify(incidents));
+    }
+    
+    // Вспомогательная: обновление статистики (всего и активных: новая + в работе)
+    function updateStats() {
+        const total = incidents.length;
+        const active = incidents.filter(inc => inc.status === 'новая' || inc.status === 'в работе').length;
+        document.getElementById('statsPreview').innerHTML = `Всего: ${total} | Активных: ${active} ⚠️`;
+    }
+    
+    // рендер таблицы с учетом фильтров и поиска
+    let currentSearch = "";
+    let currentStatusFilter = "all";
+    
+    function renderTable() {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        
+        let filtered = [...incidents];
+        
+        // фильтрация по статусу
+        if(currentStatusFilter !== 'all') {
+            filtered = filtered.filter(inc => inc.status === currentStatusFilter);
+        }
+        
+        // поиск по тексту
+        if(currentSearch.trim() !== "") {
+            const searchLower = currentSearch.trim().toLowerCase();
+            filtered = filtered.filter(inc => 
+                inc.description.toLowerCase().includes(searchLower) ||
+                inc.equipment.toLowerCase().includes(searchLower) ||
+                inc.responsible.toLowerCase().includes(searchLower) ||
+                inc.type.toLowerCase().includes(searchLower)
+            );
+        }
+        
+        if(filtered.length === 0) {
+            const emptyRow = document.createElement('tr');
+            emptyRow.className = 'empty-row';
+            emptyRow.innerHTML = '<td colspan="9">📭 Ничего не найдено. Измените параметры фильтра или добавьте запись.</td>';
+            tbody.appendChild(emptyRow);
+            updateStats();
+            return;
+        }
+        
+        for(let inc of filtered) {
+            const row = document.createElement('tr');
+            // форматирование даты
+            let formattedDate = inc.dateTime ? inc.dateTime.replace('T', ' ') : 'Дата не указана';
+            if(inc.dateTime && inc.dateTime.includes('T')) {
+                formattedDate = inc.dateTime.split('T').join(' ');
+            }
+            
+            // статус бейдж
+            let statusText = "";
+            let statusClass = "";
+            if(inc.status === 'новая') { statusText = "🚨 Новая"; statusClass="new"; }
+            else if(inc.status === 'в работе') { statusText = "🛠 В работе"; statusClass="in-progress"; }
+            else { statusText = "✅ Закрыта"; statusClass="closed"; }
+            
+            // критичность с эмодзи
+            let severityDisplay = inc.severity;
+            if(inc.severity === 'Низкая') severityDisplay = '🟢 Низкая';
+            else if(inc.severity === 'Средняя') severityDisplay = '🟡 Средняя';
+            else if(inc.severity === 'Высокая') severityDisplay = '🔴 Высокая';
+            else if(inc.severity === 'Критическая') severityDisplay = '⚫ Критическая';
+            
+            row.innerHTML = `
+                <td>${inc.id}</td>
+                <td>${formattedDate}</td>
+                <td><strong>${escapeHtml(inc.equipment)}</strong></td>
+                <td>${escapeHtml(inc.type)}</td>
+                <td>${severityDisplay}</td>
+                <td style="max-width:250px; word-break:break-word;">${escapeHtml(inc.description)}</td>
+                <td>${escapeHtml(inc.responsible)}</td>
+                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                <td class="action-buttons">
+                    <button class="icon-btn edit-btn" data-id="${inc.id}" title="Редактировать">✏️</button>
+                    <button class="icon-btn resolve-btn" data-id="${inc.id}" title="Закрыть инцидент" ${inc.status === 'закрыта' ? 'disabled style="opacity:0.4;"' : ''}>✔️</button>
+                    <button class="icon-btn delete-btn" data-id="${inc.id}" title="Удалить">🗑️</button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        }
+        
+        // обработчики для кнопок в каждой строке (делегирование через общий обработчик)
+        attachRowEvents();
+        updateStats();
+    }
+    
+    // безопасное экранирование
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+            return c;
+        });
+    }
+    
+    function attachRowEvents() {
+        // редактирование
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.removeEventListener('click', handleEdit);
+            btn.addEventListener('click', handleEdit);
+        });
+        // закрытие (resolve)
+        document.querySelectorAll('.resolve-btn').forEach(btn => {
+            btn.removeEventListener('click', handleResolve);
+            btn.addEventListener('click', handleResolve);
+        });
+        // удаление
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.removeEventListener('click', handleDelete);
+            btn.addEventListener('click', handleDelete);
+        });
+    }
+    
+    function handleEdit(e) {
+        const btn = e.currentTarget;
+        const id = parseInt(btn.getAttribute('data-id'));
+        const incident = incidents.find(inc => inc.id === id);
+        if(!incident) return;
+        
+        // Модальное окно через prompt упрощённо, но сделаем редактирование основных полей
+        const newDesc = prompt("Редактировать описание аварии:", incident.description);
+        if(newDesc !== null && newDesc.trim() !== "") incident.description = newDesc.trim();
+        const newResp = prompt("Ответственный:", incident.responsible);
+        if(newResp !== null) incident.responsible = newResp.trim() || incident.responsible;
+        const newEquipment = prompt("Оборудование:", incident.equipment);
+        if(newEquipment !== null && newEquipment.trim() !== "") incident.equipment = newEquipment.trim();
+        const newType = prompt("Тип аварии (Механическая, Электрическая и т.д.):", incident.type);
+        if(newType !== null && newType.trim() !== "") incident.type = newType.trim();
+        
+        // можно также сменить критичность выпадающим списком? сделаем просто выбор
+        let newSeverity = prompt("Критичность: Низкая, Средняя, Высокая, Критическая", incident.severity);
+        if(newSeverity !== null) {
+            const valid = ['Низкая','Средняя','Высокая','Критическая'];
+            if(valid.includes(newSeverity)) incident.severity = newSeverity;
+            else alert("Оставлено прежнее значение, доступны: Низкая,Средняя,Высокая,Критическая");
+        }
+        
+        persistData();
+        updateStatsAndRender();
+    }
+    
+    function handleResolve(e) {
+        const btn = e.currentTarget;
+        const id = parseInt(btn.getAttribute('data-id'));
+        const incident = incidents.find(inc => inc.id === id);
+        if(incident && incident.status !== 'закрыта') {
+            incident.status = 'закрыта';
+            persistData();
+            updateStatsAndRender();
+        }
+    }
+    
+    function handleDelete(e) {
+        const btn = e.currentTarget;
+        const id = parseInt(btn.getAttribute('data-id'));
+        if(confirm("Удалить запись об аварии? Данные будут безвозвратно потеряны.")) {
+            incidents = incidents.filter(inc => inc.id !== id);
+            persistData();
+            updateStatsAndRender();
+        }
+    }
+    
+    function updateStatsAndRender() {
+        renderTable();
+        updateStats();
+    }
+    
+    // Добавление новой аварии
+    function addIncident() {
+        // получение значений
+        let dateTime = document.getElementById('incidentDateTime').value;
+        if(!dateTime) {
+            // подставляем текущее локальное дата-время
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth()+1).padStart(2,'0');
+            const day = String(now.getDate()).padStart(2,'0');
+            const hours = String(now.getHours()).padStart(2,'0');
+            const minutes = String(now.getMinutes()).padStart(2,'0');
+            dateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+        const equipment = document.getElementById('equipment').value.trim();
+        const incidentType = document.getElementById('incidentType').value;
+        const severity = document.getElementById('severity').value;
+        const description = document.getElementById('description').value.trim();
+        let responsible = document.getElementById('responsible').value.trim();
+        const initStatus = document.getElementById('initialStatus').value;
+        
+        if(!equipment) {
+            alert("Пожалуйста, укажите оборудование / систему");
+            return;
+        }
+        if(!description) {
+            alert("Введите описание аварийной ситуации");
+            return;
+        }
+        if(!responsible) responsible = "Не назначен";
+        
+        const newIncident = {
+            id: nextId++,
+            dateTime: dateTime,
+            equipment: equipment,
+            type: incidentType,
+            severity: severity,
+            description: description,
+            responsible: responsible,
+            status: initStatus   // 'новая' или 'в работе'
+        };
+        
+        incidents.unshift(newIncident); // свежие сверху
+        persistData();
+        
+        // очистка формы (опционально)
+        document.getElementById('equipment').value = '';
+        document.getElementById('description').value = '';
+        document.getElementById('responsible').value = '';
+        document.getElementById('incidentDateTime').value = '';
+        // но оставим datetime пустым для автоследующего? проще оставить пустым
+        updateStatsAndRender();
+        
+        // дополнительно сбросим фильтры для отображения новой записи (не обязательно)
+        if(currentStatusFilter !== 'all' || currentSearch !== '') {
+            // но не сбрасываем принудительно, пользователь видит по своему фильтру
+        }
+    }
+    
+    // фильтры и поиск
+    function bindFilters() {
+        const searchInput = document.getElementById('searchInput');
+        const statusSelect = document.getElementById('statusFilter');
+        const resetBtn = document.getElementById('resetFiltersBtn');
+        
+        searchInput.addEventListener('input', (e) => {
+            currentSearch = e.target.value;
+            renderTable();
+        });
+        statusSelect.addEventListener('change', (e) => {
+            currentStatusFilter = e.target.value;
+            renderTable();
+        });
+        resetBtn.addEventListener('click', () => {
+            currentSearch = "";
+            currentStatusFilter = "all";
+            document.getElementById('searchInput').value = "";
+            document.getElementById('statusFilter').value = "all";
+            renderTable();
+        });
+    }
+    
+    // Инициализация страницы
+    function init() {
+        loadFromStorage();
+        bindFilters();
+        document.getElementById('addIncidentBtn').addEventListener('click', addIncident);
+        // Автоматически подставить текущую дату-время в поле при загрузке (опционально)
+        const nowField = document.getElementById('incidentDateTime');
+        if(!nowField.value) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth()+1).padStart(2,'0');
+            const day = String(now.getDate()).padStart(2,'0');
+            const hours = String(now.getHours()).padStart(2,'0');
+            const minutes = String(now.getMinutes()).padStart(2,'0');
+            nowField.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+        updateStatsAndRender();
+    }
+    
+    init();
+</script>
+</body>
+</html>
