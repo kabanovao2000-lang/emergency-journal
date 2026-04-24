@@ -1,907 +1,290 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Электронный журнал учета аварийных ситуаций | АСУ ТП</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+# app.py - Полноценный сервер с подключением к PostgreSQL
 
-        body {
-            background: #f0f4f8;
-            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-            padding: 24px 20px;
-            color: #1a2a3a;
-        }
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from datetime import datetime
+import os
 
-        .container {
-            max-width: 1440px;
-            margin: 0 auto;
-        }
+app = Flask(__name__)
+CORS(app)
 
-        /* Header */
-        .header {
-            background: linear-gradient(135deg, #0b2b3b, #1a4a6f);
-            color: white;
-            border-radius: 28px;
-            padding: 20px 30px;
-            margin-bottom: 28px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-between;
-            align-items: center;
-        }
+# Конфигурация базы данных
+DB_CONFIG = {
+    'host': os.environ.get('DB_HOST', 'localhost'),
+    'port': int(os.environ.get('DB_PORT', 5432)),
+    'database': os.environ.get('DB_NAME', 'emergency_journal'),
+    'user': os.environ.get('DB_USER', 'app_user'),
+    'password': os.environ.get('DB_PASSWORD', 'secure_password')
+}
 
-        .title-section h1 {
-            font-size: 1.9rem;
-            font-weight: 600;
-            letter-spacing: -0.3px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
+def get_db():
+    """Получение соединения с базой данных"""
+    return psycopg2.connect(**DB_CONFIG, cursor_factory=RealDictCursor)
 
-        .title-section h1::before {
-            content: "⚠️";
-            font-size: 2rem;
-        }
-
-        .title-section p {
-            font-size: 0.9rem;
-            opacity: 0.85;
-            margin-top: 6px;
-        }
-
-        .stats-badge {
-            background: rgba(255,255,255,0.2);
-            backdrop-filter: blur(4px);
-            padding: 10px 20px;
-            border-radius: 60px;
-            font-weight: 500;
-            font-size: 1rem;
-        }
-
-        /* Карточка формы добавления */
-        .add-card {
-            background: white;
-            border-radius: 28px;
-            padding: 24px 28px;
-            margin-bottom: 32px;
-            box-shadow: 0 8px 18px rgba(0,0,0,0.05);
-            transition: all 0.2s;
-            border: 1px solid #e2edf2;
-        }
-
-        .add-card h2 {
-            font-size: 1.5rem;
-            margin-bottom: 18px;
-            color: #0f3b4f;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .form-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 18px;
-            margin-bottom: 20px;
-        }
-
-        .form-group {
-            flex: 1 1 220px;
-            min-width: 180px;
-        }
-
-        .form-group label {
-            display: block;
-            font-weight: 600;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #4b6a7c;
-            margin-bottom: 6px;
-        }
-
-        .form-group input, .form-group select, .form-group textarea {
-            width: 100%;
-            padding: 12px 14px;
-            border-radius: 18px;
-            border: 1.5px solid #cbdde6;
-            background: #fff;
-            font-size: 0.95rem;
-            transition: 0.2s;
-            font-family: inherit;
-        }
-
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-            outline: none;
-            border-color: #1a6f8f;
-            box-shadow: 0 0 0 3px rgba(26,111,143,0.2);
-        }
-
-        .form-group textarea {
-            resize: vertical;
-            min-height: 70px;
-        }
-
-        .btn {
-            border: none;
-            background: #1a6f8f;
-            color: white;
-            padding: 12px 24px;
-            font-weight: 600;
-            border-radius: 40px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn:hover {
-            background: #0d5570;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 12px rgba(0,0,0,0.1);
-        }
-
-        .btn-danger {
-            background: #bc4e2c;
-        }
-
-        .btn-danger:hover {
-            background: #9a3a1c;
-        }
-
-        .btn-outline {
-            background: transparent;
-            border: 1.5px solid #1a6f8f;
-            color: #1a6f8f;
-        }
-
-        .btn-outline:hover {
-            background: #e6f4f9;
-            transform: none;
-            box-shadow: none;
-        }
-
-        /* filters */
-        .filter-bar {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 24px;
-            gap: 15px;
-        }
-
-        .search-box {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            align-items: center;
-            background: white;
-            padding: 8px 18px;
-            border-radius: 60px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.03);
-            border: 1px solid #d4e2ea;
-        }
-
-        .search-box input {
-            border: none;
-            padding: 10px 0;
-            font-size: 0.9rem;
-            width: 220px;
-            background: transparent;
-        }
-
-        .search-box input:focus {
-            outline: none;
-        }
-
-        .status-filter select {
-            padding: 9px 16px;
-            border-radius: 30px;
-            border: 1px solid #cbdde6;
-            background: white;
-            font-weight: 500;
-        }
-
-        .table-wrapper {
-            background: white;
-            border-radius: 28px;
-            overflow-x: auto;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.05);
-            border: 1px solid #eef3f8;
-        }
-
-        .journal-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9rem;
-            min-width: 700px;
-        }
-
-        .journal-table th {
-            text-align: left;
-            padding: 18px 16px;
-            background: #f9fdfe;
-            color: #1f5068;
-            font-weight: 700;
-            border-bottom: 2px solid #dae9f0;
-        }
-
-        .journal-table td {
-            padding: 14px 16px;
-            border-bottom: 1px solid #e9f0f4;
-            vertical-align: middle;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 4px 14px;
-            border-radius: 30px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-align: center;
-            background: #eef2f5;
-            color: #2c5a74;
-        }
-
-        .status-badge.closed {
-            background: #dff0e4;
-            color: #1c6e3c;
-        }
-
-        .status-badge.in-progress {
-            background: #fff0db;
-            color: #b75f00;
-        }
-
-        .status-badge.new {
-            background: #ffe0e0;
-            color: #bc3f2e;
-        }
-
-        .action-buttons {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .icon-btn {
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 1.25rem;
-            padding: 4px 8px;
-            border-radius: 30px;
-            transition: 0.1s;
-        }
-
-        .icon-btn.edit-btn {
-            color: #2c7da0;
-        }
-        .icon-btn.delete-btn {
-            color: #bc4e2c;
-        }
-        .icon-btn.resolve-btn {
-            color: #2b7e45;
-        }
-
-        .icon-btn:hover {
-            background: #f0f5f9;
-            transform: scale(1.05);
-        }
-
-        .empty-row td {
-            text-align: center;
-            padding: 48px;
-            color: #8ba3b3;
-            font-style: italic;
-        }
-
-        .footer-note {
-            margin-top: 30px;
-            text-align: center;
-            font-size: 0.8rem;
-            color: #6c8d9e;
-        }
-
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-
-        .loading-spinner {
-            background: white;
-            padding: 20px 40px;
-            border-radius: 28px;
-            font-size: 1.2rem;
-            font-weight: 600;
-        }
-
-        @media (max-width: 750px) {
-            body {
-                padding: 16px;
-            }
-            .header {
-                flex-direction: column;
-                align-items: start;
-                gap: 12px;
-            }
-            .form-row {
-                flex-direction: column;
-            }
-        }
-    </style>
-</head>
-<body>
-<div class="container">
-    <div class="header">
-        <div class="title-section">
-            <h1>Журнал учёта аварийных ситуаций</h1>
-            <p>Регистрация, мониторинг и устранение инцидентов | АСУ ТП</p>
-        </div>
-        <div class="stats-badge" id="statsPreview">
-            Всего: 0 | Активных: 0
-        </div>
-    </div>
-
-    <!-- Форма добавления новой аварийной ситуации -->
-    <div class="add-card">
-        <h2>➕ Зарегистрировать инцидент</h2>
-        <div class="form-row">
-            <div class="form-group">
-                <label>Дата и время</label>
-                <input type="datetime-local" id="incidentDateTime" value="">
-            </div>
-            <div class="form-group">
-                <label>Оборудование / Система</label>
-                <input type="text" id="equipment" placeholder="Насосная станция, Сервер, Конвейер..." autocomplete="off">
-            </div>
-            <div class="form-group">
-                <label>Тип аварии</label>
-                <select id="incidentType">
-                    <option value="Механическая">Механическая поломка</option>
-                    <option value="Электрическая">Электрическая неисправность</option>
-                    <option value="Программный сбой">Программный сбой</option>
-                    <option value="Утечка">Утечка / Пожар</option>
-                    <option value="Человеческий фактор">Человеческий фактор</option>
-                    <option value="Другое">Другое</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Критичность</label>
-                <select id="severity">
-                    <option value="Низкая">🟢 Низкая</option>
-                    <option value="Средняя">🟡 Средняя</option>
-                    <option value="Высокая">🔴 Высокая</option>
-                    <option value="Критическая">⚫ Критическая</option>
-                </select>
-            </div>
-        </div>
-        <div class="form-row">
-            <div class="form-group" style="flex:2">
-                <label>Описание аварии</label>
-                <textarea id="description" placeholder="Подробное описание инцидента, последствия..."></textarea>
-            </div>
-        </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label>Ответственный</label>
-                <input type="text" id="responsible" placeholder="ФИО или должность" autocomplete="off">
-            </div>
-            <div class="form-group">
-                <label>Статус (при создании)</label>
-                <select id="initialStatus">
-                    <option value="новая">🚨 Новая (требует реакции)</option>
-                    <option value="в работе">🛠 В работе</option>
-                </select>
-            </div>
-            <div class="form-group" style="justify-content: flex-end; display: flex; align-items: flex-end;">
-                <button class="btn" id="addIncidentBtn">➕ Добавить запись</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Панель фильтрации и поиска -->
-    <div class="filter-bar">
-        <div class="search-box">
-            <span>🔍</span>
-            <input type="text" id="searchInput" placeholder="Поиск по описанию, оборудованию, ответств.">
-        </div>
-        <div class="status-filter">
-            <select id="statusFilter">
-                <option value="all">Все статусы</option>
-                <option value="новая">Новая</option>
-                <option value="в работе">В работе</option>
-                <option value="закрыта">Закрыта</option>
-            </select>
-        </div>
-        <button id="resetFiltersBtn" class="btn-outline btn" style="padding: 8px 20px;">Сбросить фильтры</button>
-    </div>
-
-    <!-- Таблица журнала аварий -->
-    <div class="table-wrapper">
-        <table class="journal-table" id="incidentTable">
-            <thead>
-                <tr>
-                    <th>ID</th><th>Дата/Время</th><th>Оборудование</th><th>Тип аварии</th><th>Критичность</th><th>Описание</th><th>Ответственный</th><th>Статус</th><th>Действия</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody">
-                <tr class="empty-row"><td colspan="9">Загрузка данных с сервера...</td></tr>
-            </tbody>
-        </table>
-    </div>
-    <div class="footer-note">
-        📋 Электронный журнал учета аварийных ситуаций — работа с сервером (API)
-    </div>
-</div>
-
-<!-- Loading overlay -->
-<div id="loadingOverlay" class="loading-overlay">
-    <div class="loading-spinner">⏳ Загрузка...</div>
-</div>
-
-<script>
-    // ========== КОНФИГУРАЦИЯ ==========
-    // Укажите URL вашего сервера
-    const API_BASE_URL = '/api';  // Если сервер на том же хосте
-    // const API_BASE_URL = 'http://localhost:5000/api';  // Для локальной разработки
+def init_db():
+    """Инициализация базы данных (создание таблиц при отсутствии)"""
+    conn = get_db()
+    cur = conn.cursor()
     
-    // ========== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ==========
-    let incidents = [];
-    let currentSearch = "";
-    let currentStatusFilter = "all";
+    # Создание таблицы incidents
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS incidents (
+            id SERIAL PRIMARY KEY,
+            date_time TIMESTAMP NOT NULL,
+            equipment VARCHAR(255) NOT NULL,
+            type VARCHAR(100) NOT NULL,
+            severity VARCHAR(50) NOT NULL,
+            description TEXT NOT NULL,
+            responsible VARCHAR(255) DEFAULT 'Не назначен',
+            status VARCHAR(50) NOT NULL DEFAULT 'новая',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     
-    // ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-    function showLoading() {
-        document.getElementById('loadingOverlay').style.display = 'flex';
-    }
+    # Проверка наличия демо-данных
+    cur.execute("SELECT COUNT(*) FROM incidents")
+    count = cur.fetchone()['count']
     
-    function hideLoading() {
-        document.getElementById('loadingOverlay').style.display = 'none';
-    }
+    if count == 0:
+        demo_data = [
+            ('2025-04-22 08:30:00', 'Роторная дробилка', 'Механическая', 'Высокая', 
+             'Перегрев подшипников, остановка линии', 'Иванов А.А.', 'новая'),
+            ('2025-04-21 14:15:00', 'Сервер баз данных', 'Программный сбой', 'Критическая', 
+             'Отказ кластера БД, потеря данных за 2 часа', 'Петрова Е.В.', 'в работе'),
+            ('2025-04-20 23:50:00', 'Насосная станция', 'Утечка', 'Средняя', 
+             'Небольшая утечка масла, устранена частично', 'Сидоров М.И.', 'закрыта')
+        ]
+        for item in demo_data:
+            cur.execute("""
+                INSERT INTO incidents (date_time, equipment, type, severity, description, responsible, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, item)
     
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        });
-    }
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Инициализация БД при запуске
+init_db()
+
+# ========== API ENDPOINTS ==========
+
+@app.route('/api/incidents', methods=['GET'])
+def get_incidents():
+    """Получение списка инцидентов с фильтрацией"""
+    status = request.args.get('status', 'all')
+    search = request.args.get('search', '')
     
-    function showMessage(message, isError = false) {
-        // Простое уведомление через alert (можно заменить на красивое модальное окно)
-        if (isError) {
-            alert('❌ Ошибка: ' + message);
-        } else {
-            alert('✅ ' + message);
-        }
-    }
+    conn = get_db()
+    cur = conn.cursor()
     
-    // ========== API-ЗАПРОСЫ К СЕРВЕРУ ==========
+    query = "SELECT * FROM incidents WHERE 1=1"
+    params = []
     
-    // 1. Загрузка всех инцидентов с сервера (GET /api/incidents)
-    async function loadIncidentsFromServer() {
-        showLoading();
-        try {
-            let url = `${API_BASE_URL}/incidents?`;
-            if (currentStatusFilter !== 'all') {
-                url += `status=${encodeURIComponent(currentStatusFilter)}&`;
-            }
-            if (currentSearch.trim()) {
-                url += `search=${encodeURIComponent(currentSearch.trim())}&`;
-            }
-            url += `_=${Date.now()}`; // предотвращаем кэширование
-            
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            const data = await response.json();
-            incidents = data.items || [];
-            updateStatsAndRender();
-        } catch (error) {
-            console.error('Ошибка загрузки:', error);
-            showMessage('Не удалось загрузить данные с сервера: ' + error.message, true);
-            incidents = [];
-            updateStatsAndRender();
-        } finally {
-            hideLoading();
-        }
-    }
+    if status != 'all':
+        query += " AND status = %s"
+        params.append(status)
     
-    // 2. Создание нового инцидента (POST /api/incidents)
-    async function createIncidentOnServer(incidentData) {
-        showLoading();
-        try {
-            const response = await fetch(`${API_BASE_URL}/incidents`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(incidentData)
-            });
-            
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `HTTP ${response.status}`);
-            }
-            
-            const newIncident = await response.json();
-            showMessage('Инцидент успешно добавлен!');
-            return newIncident;
-        } catch (error) {
-            console.error('Ошибка создания:', error);
-            showMessage('Не удалось добавить инцидент: ' + error.message, true);
-            return null;
-        } finally {
-            hideLoading();
-        }
-    }
+    if search:
+        query += " AND (description ILIKE %s OR equipment ILIKE %s OR responsible ILIKE %s)"
+        search_pattern = f'%{search}%'
+        params.extend([search_pattern, search_pattern, search_pattern])
     
-    // 3. Обновление статуса инцидента (PATCH /api/incidents/{id})
-    async function updateIncidentStatusOnServer(id, newStatus) {
-        showLoading();
-        try {
-            const response = await fetch(`${API_BASE_URL}/incidents/${id}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ status: newStatus })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            const updated = await response.json();
-            showMessage(`Инцидент #${id} изменён: ${newStatus === 'закрыта' ? 'закрыт' : 'обновлён'}`);
-            return updated;
-        } catch (error) {
-            console.error('Ошибка обновления:', error);
-            showMessage('Не удалось обновить статус: ' + error.message, true);
-            return null;
-        } finally {
-            hideLoading();
-        }
-    }
+    query += " ORDER BY date_time DESC"
     
-    // 4. Полное обновление инцидента (PUT /api/incidents/{id})
-    async function updateIncidentFullOnServer(id, incidentData) {
-        showLoading();
-        try {
-            const response = await fetch(`${API_BASE_URL}/incidents/${id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(incidentData)
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            const updated = await response.json();
-            showMessage(`Инцидент #${id} успешно обновлён!`);
-            return updated;
-        } catch (error) {
-            console.error('Ошибка обновления:', error);
-            showMessage('Не удалось обновить инцидент: ' + error.message, true);
-            return null;
-        } finally {
-            hideLoading();
-        }
-    }
+    cur.execute(query, params)
+    incidents = cur.fetchall()
     
-    // 5. Удаление инцидента (DELETE /api/incidents/{id})
-    async function deleteIncidentOnServer(id) {
-        showLoading();
-        try {
-            const response = await fetch(`${API_BASE_URL}/incidents/${id}`, {
-                method: 'DELETE'
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            showMessage(`Инцидент #${id} удалён`);
-            return true;
-        } catch (error) {
-            console.error('Ошибка удаления:', error);
-            showMessage('Не удалось удалить инцидент: ' + error.message, true);
-            return false;
-        } finally {
-            hideLoading();
-        }
-    }
+    cur.close()
+    conn.close()
     
-    // ========== UI ЛОГИКА (ОТОБРАЖЕНИЕ ТАБЛИЦЫ) ==========
+    # Подсчёт активных
+    active_count = sum(1 for inc in incidents if inc['status'] in ('новая', 'в работе'))
     
-    function updateStats() {
-        const total = incidents.length;
-        const active = incidents.filter(inc => inc.status === 'новая' || inc.status === 'в работе').length;
-        document.getElementById('statsPreview').innerHTML = `Всего: ${total} | Активных: ${active} ⚠️`;
-    }
+    return jsonify({
+        'items': incidents,
+        'total': len(incidents),
+        'active': active_count
+    })
+
+@app.route('/api/incidents', methods=['POST'])
+def create_incident():
+    """Создание нового инцидента"""
+    data = request.json
     
-    function renderTable() {
-        const tbody = document.getElementById('tableBody');
-        tbody.innerHTML = '';
-        
-        let filtered = [...incidents];
-        
-        // фильтрация по статусу (дополнительная, хотя сервер уже фильтрует)
-        if (currentStatusFilter !== 'all') {
-            filtered = filtered.filter(inc => inc.status === currentStatusFilter);
-        }
-        
-        // поиск по тексту (дополнительный, на клиенте)
-        if (currentSearch.trim() !== "") {
-            const searchLower = currentSearch.trim().toLowerCase();
-            filtered = filtered.filter(inc => 
-                (inc.description || '').toLowerCase().includes(searchLower) ||
-                (inc.equipment || '').toLowerCase().includes(searchLower) ||
-                (inc.responsible || '').toLowerCase().includes(searchLower) ||
-                (inc.type || '').toLowerCase().includes(searchLower)
-            );
-        }
-        
-        if (filtered.length === 0) {
-            const emptyRow = document.createElement('tr');
-            emptyRow.className = 'empty-row';
-            emptyRow.innerHTML = '<td colspan="9">📭 Ничего не найдено. Добавьте запись.</td>';
-            tbody.appendChild(emptyRow);
-            updateStats();
-            return;
-        }
-        
-        for (let inc of filtered) {
-            const row = document.createElement('tr');
-            let formattedDate = inc.dateTime ? inc.dateTime.replace('T', ' ') : 'Дата не указана';
-            if (inc.dateTime && inc.dateTime.includes('T')) {
-                formattedDate = inc.dateTime.split('T').join(' ');
-            }
-            
-            let statusText = "", statusClass = "";
-            if (inc.status === 'новая') { statusText = "🚨 Новая"; statusClass = "new"; }
-            else if (inc.status === 'в работе') { statusText = "🛠 В работе"; statusClass = "in-progress"; }
-            else { statusText = "✅ Закрыта"; statusClass = "closed"; }
-            
-            let severityDisplay = inc.severity;
-            if (inc.severity === 'Низкая') severityDisplay = '🟢 Низкая';
-            else if (inc.severity === 'Средняя') severityDisplay = '🟡 Средняя';
-            else if (inc.severity === 'Высокая') severityDisplay = '🔴 Высокая';
-            else if (inc.severity === 'Критическая') severityDisplay = '⚫ Критическая';
-            
-            row.innerHTML = `
-                <td>${inc.id}</td>
-                <td>${escapeHtml(formattedDate)}</td>
-                <td><strong>${escapeHtml(inc.equipment)}</strong></td>
-                <td>${escapeHtml(inc.type)}</td>
-                <td>${severityDisplay}</td>
-                <td style="max-width:250px; word-break:break-word;">${escapeHtml(inc.description)}</td>
-                <td>${escapeHtml(inc.responsible || 'Не назначен')}</td>
-                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
-                <td class="action-buttons">
-                    <button class="icon-btn edit-btn" data-id="${inc.id}" title="Редактировать">✏️</button>
-                    <button class="icon-btn resolve-btn" data-id="${inc.id}" title="Закрыть инцидент" ${inc.status === 'закрыта' ? 'disabled style="opacity:0.4;"' : ''}>✔️</button>
-                    <button class="icon-btn delete-btn" data-id="${inc.id}" title="Удалить">🗑️</button>
-                </td>
-            `;
-            tbody.appendChild(row);
-        }
-        
-        attachRowEvents();
-        updateStats();
-    }
+    # Валидация
+    required = ['dateTime', 'equipment', 'type', 'severity', 'description', 'status']
+    for field in required:
+        if field not in data or not data[field]:
+            return jsonify({'error': f'Поле {field} обязательно'}), 400
     
-    // ========== ОБРАБОТЧИКИ ДЕЙСТВИЙ (С ВЫЗОВОМ API) ==========
+    responsible = data.get('responsible', 'Не назначен')
+    if not responsible:
+        responsible = 'Не назначен'
     
-    function attachRowEvents() {
-        // Редактирование
-        document.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.removeEventListener('click', handleEdit);
-            btn.addEventListener('click', handleEdit);
-        });
-        // Закрытие (изменение статуса)
-        document.querySelectorAll('.resolve-btn').forEach(btn => {
-            btn.removeEventListener('click', handleResolve);
-            btn.addEventListener('click', handleResolve);
-        });
-        // Удаление
-        document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.removeEventListener('click', handleDelete);
-            btn.addEventListener('click', handleDelete);
-        });
-    }
+    conn = get_db()
+    cur = conn.cursor()
     
-    async function handleEdit(e) {
-        const btn = e.currentTarget;
-        const id = parseInt(btn.getAttribute('data-id'));
-        const incident = incidents.find(inc => inc.id === id);
-        if (!incident) return;
-        
-        // Собираем новые данные через prompt (можно заменить на модальное окно)
-        const newDesc = prompt("Редактировать описание аварии:", incident.description);
-        if (newDesc !== null && newDesc.trim() !== "") incident.description = newDesc.trim();
-        
-        const newResp = prompt("Ответственный:", incident.responsible);
-        if (newResp !== null) incident.responsible = newResp.trim() || "Не назначен";
-        
-        const newEquipment = prompt("Оборудование:", incident.equipment);
-        if (newEquipment !== null && newEquipment.trim() !== "") incident.equipment = newEquipment.trim();
-        
-        const newType = prompt("Тип аварии (Механическая, Электрическая и т.д.):", incident.type);
-        if (newType !== null && newType.trim() !== "") incident.type = newType.trim();
-        
-        let newSeverity = prompt("Критичность: Низкая, Средняя, Высокая, Критическая", incident.severity);
-        if (newSeverity !== null) {
-            const valid = ['Низкая','Средняя','Высокая','Критическая'];
-            if (valid.includes(newSeverity)) incident.severity = newSeverity;
-            else alert("Оставлено прежнее значение, доступны: Низкая,Средняя,Высокая,Критическая");
-        }
-        
-        // Отправляем обновление на сервер
-        const updated = await updateIncidentFullOnServer(id, incident);
-        if (updated) {
-            await loadIncidentsFromServer(); // перезагружаем данные
-        }
-    }
+    cur.execute("""
+        INSERT INTO incidents (date_time, equipment, type, severity, description, responsible, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING id, date_time, equipment, type, severity, description, responsible, status, created_at, updated_at
+    """, (data['dateTime'], data['equipment'], data['type'], 
+          data['severity'], data['description'], responsible, data['status']))
     
-    async function handleResolve(e) {
-        const btn = e.currentTarget;
-        const id = parseInt(btn.getAttribute('data-id'));
-        const incident = incidents.find(inc => inc.id === id);
-        if (incident && incident.status !== 'закрыта') {
-            const updated = await updateIncidentStatusOnServer(id, 'закрыта');
-            if (updated) {
-                await loadIncidentsFromServer();
-            }
-        }
-    }
+    new_incident = cur.fetchone()
+    conn.commit()
     
-    async function handleDelete(e) {
-        const btn = e.currentTarget;
-        const id = parseInt(btn.getAttribute('data-id'));
-        if (confirm("Удалить запись об аварии? Данные будут безвозвратно потеряны.")) {
-            const success = await deleteIncidentOnServer(id);
-            if (success) {
-                await loadIncidentsFromServer();
-            }
-        }
-    }
+    cur.close()
+    conn.close()
     
-    function updateStatsAndRender() {
-        renderTable();
-        updateStats();
-    }
+    return jsonify(new_incident), 201
+
+@app.route('/api/incidents/<int:id>', methods=['GET'])
+def get_incident(id):
+    """Получение одного инцидента по ID"""
+    conn = get_db()
+    cur = conn.cursor()
     
-    // ========== ДОБАВЛЕНИЕ НОВОГО ИНЦИДЕНТА ==========
-    async function addIncident() {
-        // Получение значений из формы
-        let dateTime = document.getElementById('incidentDateTime').value;
-        if (!dateTime) {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth()+1).padStart(2,'0');
-            const day = String(now.getDate()).padStart(2,'0');
-            const hours = String(now.getHours()).padStart(2,'0');
-            const minutes = String(now.getMinutes()).padStart(2,'0');
-            dateTime = `${year}-${month}-${day}T${hours}:${minutes}`;
-        }
-        
-        const equipment = document.getElementById('equipment').value.trim();
-        const incidentType = document.getElementById('incidentType').value;
-        const severity = document.getElementById('severity').value;
-        const description = document.getElementById('description').value.trim();
-        let responsible = document.getElementById('responsible').value.trim();
-        const initStatus = document.getElementById('initialStatus').value;
-        
-        if (!equipment) {
-            alert("Пожалуйста, укажите оборудование / систему");
-            return;
-        }
-        if (!description) {
-            alert("Введите описание аварийной ситуации");
-            return;
-        }
-        if (!responsible) responsible = "Не назначен";
-        
-        const newIncident = {
-            dateTime: dateTime,
-            equipment: equipment,
-            type: incidentType,
-            severity: severity,
-            description: description,
-            responsible: responsible,
-            status: initStatus
-        };
-        
-        const created = await createIncidentOnServer(newIncident);
-        if (created) {
-            // Очистка формы
-            document.getElementById('equipment').value = '';
-            document.getElementById('description').value = '';
-            document.getElementById('responsible').value = '';
-            document.getElementById('incidentDateTime').value = '';
-            
-            // Перезагружаем данные с сервера
-            await loadIncidentsFromServer();
-        }
-    }
+    cur.execute("SELECT * FROM incidents WHERE id = %s", (id,))
+    incident = cur.fetchone()
     
-    // ========== ФИЛЬТРАЦИЯ ==========
-    function bindFilters() {
-        const searchInput = document.getElementById('searchInput');
-        const statusSelect = document.getElementById('statusFilter');
-        const resetBtn = document.getElementById('resetFiltersBtn');
-        
-        searchInput.addEventListener('input', (e) => {
-            currentSearch = e.target.value;
-            renderTable(); // фильтрация на клиенте (быстрее)
-            // Альтернатива: loadIncidentsFromServer() для фильтрации на сервере
-        });
-        
-        statusSelect.addEventListener('change', async (e) => {
-            currentStatusFilter = e.target.value;
-            await loadIncidentsFromServer(); // фильтрация на сервере
-        });
-        
-        resetBtn.addEventListener('click', async () => {
-            currentSearch = "";
-            currentStatusFilter = "all";
-            document.getElementById('searchInput').value = "";
-            document.getElementById('statusFilter').value = "all";
-            await loadIncidentsFromServer();
-        });
-    }
+    cur.close()
+    conn.close()
     
-    // ========== ИНИЦИАЛИЗАЦИЯ ==========
-    async function init() {
-        bindFilters();
-        document.getElementById('addIncidentBtn').addEventListener('click', addIncident);
-        
-        // Установка текущей даты/времени в поле
-        const nowField = document.getElementById('incidentDateTime');
-        if (!nowField.value) {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth()+1).padStart(2,'0');
-            const day = String(now.getDate()).padStart(2,'0');
-            const hours = String(now.getHours()).padStart(2,'0');
-            const minutes = String(now.getMinutes()).padStart(2,'0');
-            nowField.value = `${year}-${month}-${day}T${hours}:${minutes}`;
-        }
-        
-        // Загружаем данные с сервера
-        await loadIncidentsFromServer();
-    }
+    if not incident:
+        return jsonify({'error': 'Инцидент не найден'}), 404
     
-    // Запуск приложения
-    init();
-</script>
-</body>
-</html>
+    return jsonify(incident)
+
+@app.route('/api/incidents/<int:id>', methods=['PUT'])
+def update_incident_full(id):
+    """Полное обновление инцидента"""
+    data = request.json
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Проверка существования
+    cur.execute("SELECT id FROM incidents WHERE id = %s", (id,))
+    if not cur.fetchone():
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Инцидент не найден'}), 404
+    
+    cur.execute("""
+        UPDATE incidents 
+        SET date_time = %s, equipment = %s, type = %s, severity = %s, 
+            description = %s, responsible = %s, status = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        RETURNING *
+    """, (data['dateTime'], data['equipment'], data['type'], 
+          data['severity'], data['description'], data['responsible'], data['status'], id))
+    
+    updated = cur.fetchone()
+    conn.commit()
+    
+    cur.close()
+    conn.close()
+    
+    return jsonify(updated)
+
+@app.route('/api/incidents/<int:id>', methods=['PATCH'])
+def update_incident_partial(id):
+    """Частичное обновление инцидента"""
+    data = request.json
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Проверка существования
+    cur.execute("SELECT id FROM incidents WHERE id = %s", (id,))
+    if not cur.fetchone():
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Инцидент не найден'}), 404
+    
+    updates = []
+    params = []
+    
+    if 'status' in data:
+        updates.append("status = %s")
+        params.append(data['status'])
+    
+    if 'responsible' in data:
+        updates.append("responsible = %s")
+        params.append(data['responsible'])
+    
+    if 'description' in data:
+        updates.append("description = %s")
+        params.append(data['description'])
+    
+    if not updates:
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Нет полей для обновления'}), 400
+    
+    updates.append("updated_at = CURRENT_TIMESTAMP")
+    params.append(id)
+    
+    query = f"UPDATE incidents SET {', '.join(updates)} WHERE id = %s RETURNING *"
+    cur.execute(query, params)
+    
+    updated = cur.fetchone()
+    conn.commit()
+    
+    cur.close()
+    conn.close()
+    
+    return jsonify(updated)
+
+@app.route('/api/incidents/<int:id>', methods=['DELETE'])
+def delete_incident(id):
+    """Удаление инцидента"""
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("DELETE FROM incidents WHERE id = %s RETURNING id", (id,))
+    deleted = cur.fetchone()
+    conn.commit()
+    
+    cur.close()
+    conn.close()
+    
+    if not deleted:
+        return jsonify({'error': 'Инцидент не найден'}), 404
+    
+    return jsonify({'message': 'deleted', 'id': id})
+
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    """Получение общей статистики"""
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN status IN ('новая', 'в работе') THEN 1 ELSE 0 END) as active,
+            SUM(CASE WHEN status = 'новая' THEN 1 ELSE 0 END) as new,
+            SUM(CASE WHEN status = 'в работе' THEN 1 ELSE 0 END) as in_progress,
+            SUM(CASE WHEN status = 'закрыта' THEN 1 ELSE 0 END) as closed
+        FROM incidents
+    """)
+    
+    stats = cur.fetchone()
+    cur.close()
+    conn.close()
+    
+    return jsonify(stats)
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Проверка работоспособности сервера"""
+    return jsonify({'status': 'ok', 'timestamp': datetime.now().isoformat()})
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
